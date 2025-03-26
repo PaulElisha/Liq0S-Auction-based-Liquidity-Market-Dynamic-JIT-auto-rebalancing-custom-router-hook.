@@ -7,6 +7,7 @@ import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
+import {TickExtended} from "./TickExtended.sol";
 
 library PoolExtended {
     using StateLibrary for *;
@@ -14,6 +15,7 @@ library PoolExtended {
     struct Info {
         uint48 lastBlockTimestamp;
         uint176 secondsPerLiquidityGlobalX128;
+        mapping(int24 tick => TickExtended.Info) ticks;
     }
 
     /// @notice Updates the global state of the pool

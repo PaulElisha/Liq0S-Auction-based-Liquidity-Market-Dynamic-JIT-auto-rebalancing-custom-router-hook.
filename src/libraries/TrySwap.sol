@@ -27,12 +27,6 @@ library TrySwap {
     using StateLibrary for IPoolManager;
     using PoolExtended for IPoolManager;
 
-    // @dev: This function is called to simulate a swap
-    // @param: IPoolManager is the pool manager
-    // @param: PoolId is the id of the pool
-    // @param: SwapParams is the parameters of the swap
-    // @param: swapStepHook is the hook function
-    // @return: BalanceDelta is the delta of the swap
     function swap(
         IPoolManager poolManager,
         PoolId poolId,
@@ -72,7 +66,6 @@ library TrySwap {
                 liquidity: _liquidityStart
             });
 
-            // if the beforeSwap hook returned a valid fee override, use that as the LP fee, otherwise load from storage
             {
                 uint24 lpFee = params.lpFeeOverride.isOverride()
                     ? params.lpFeeOverride.removeOverrideFlagAndValidate()
@@ -121,7 +114,6 @@ library TrySwap {
         }
         Pool.StepComputations memory step;
 
-        // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
         while (
             !(amountSpecifiedRemaining == 0 ||
                 state.sqrtPriceX96 == params.sqrtPriceLimitX96)
@@ -137,7 +129,6 @@ library TrySwap {
                     zeroForOne
                 );
 
-            // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
             if (step.tickNext <= TickMath.MIN_TICK) {
                 step.tickNext = TickMath.MIN_TICK;
             }
@@ -145,10 +136,8 @@ library TrySwap {
                 step.tickNext = TickMath.MAX_TICK;
             }
 
-            // get the price for the next tick
             step.sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(step.tickNext);
 
-            // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
             (
                 state.sqrtPriceX96,
                 step.amountIn,
@@ -174,7 +163,6 @@ library TrySwap {
                     amountCalculated -
                     (step.amountIn + step.feeAmount).toInt256();
             } else {
-                // safe because we test that amountSpecified > amountIn + feeAmount in SwapMath
                 unchecked {
                     amountSpecifiedRemaining += (step.amountIn + step.feeAmount)
                         .toInt256();
@@ -182,30 +170,22 @@ library TrySwap {
                 amountCalculated = amountCalculated + step.amountOut.toInt256();
             }
 
-            // if the protocol fee is on, calculate how much is owed, decrement feeAmount, and increment protocolFee
             if (protocolFee > 0) {
                 unchecked {
-                    // step.amountIn does not include the swap fee, as it's already been taken from it,
-                    // so add it back to get the total amountIn and use that to calculate the amount of fees owed to the protocol
                     uint256 delta = ((step.amountIn + step.feeAmount) *
                         protocolFee) / ProtocolFeeLibrary.PIPS_DENOMINATOR;
-                    // subtract it from the total fee and add it to the protocol fee
                     step.feeAmount -= delta;
                 }
             }
 
             swapStepHook(poolId, step, state);
 
-            // shift tick if we reached the next price
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
-                // if the tick is initialized, run the tick transition
                 if (step.initialized) {
                     (, int128 liquidityNet) = poolManager.getTickLiquidity(
                         poolId,
                         step.tickNext
                     );
-                    // if we're moving leftward, we interpret liquidityNet as the opposite sign
-                    // safe because liquidityNet cannot be type(int128).min
                     unchecked {
                         if (zeroForOne) liquidityNet = -liquidityNet;
                     }
@@ -216,9 +196,7 @@ library TrySwap {
                     );
                 }
 
-                // Equivalent to `state.tick = zeroForOne ? step.tickNext - 1 : step.tickNext;`
                 unchecked {
-                    // cannot cast a bool to an int24 in Solidity
                     int24 _zeroForOne;
                     assembly {
                         _zeroForOne := zeroForOne
@@ -226,7 +204,6 @@ library TrySwap {
                     state.tick = step.tickNext - _zeroForOne;
                 }
             } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
-                // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
                 state.tick = TickMath.getTickAtSqrtPrice(state.sqrtPriceX96);
             }
         }
