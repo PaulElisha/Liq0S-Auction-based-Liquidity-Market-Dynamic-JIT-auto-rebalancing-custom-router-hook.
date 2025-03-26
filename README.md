@@ -6,7 +6,7 @@ It takes the approach of the regular MEV bots but automated on-chain for profita
 
 ## Why?
 
-I participated in the UH1-C2 hookathon with my team where we built a JIT Rebalancer hook ([JIT Rebalancer Hook]('https://github.com/PaulElisha/JIT-UNISWAP-V4-HOOK')) but I noticed it comes with some flaws which includes:
+I participated in the UH1-C2 hookathon with my team where we built a JIT Rebalancer hook [JIT Rebalancer Hook](https://github.com/PaulElisha/JIT-UNISWAP-V4-HOOK) but I noticed it comes with some flaws which includes:
 
 1. The need to manage the deployments of multiple liquidity manager contract doesn't make it sustainable. 
 

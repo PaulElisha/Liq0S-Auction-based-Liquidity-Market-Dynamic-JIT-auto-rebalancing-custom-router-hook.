@@ -43,6 +43,7 @@ contract JITRebalancerHookTest is Test, Deployers {
     function setUp() public {
         // Deploy v4 core contracts
         deployFreshManagerAndRouters();
+
         quoter = new Quoter(manager);
         // Deploy two test tokens
         (token0, token1) = deployMintAndApprove2Currencies();
@@ -54,8 +55,13 @@ contract JITRebalancerHookTest is Test, Deployers {
         ); //  Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
 
         address hookAddress = address(flags);
-        deployCodeTo("RouterHook.sol", abi.encode(manager, ""), hookAddress);
-        routerHook = RouterHook(hookAddress);
+
+        deployCodeTo(
+            "JITRebalancerHook.sol",
+            abi.encode(manager, ""),
+            hookAddress
+        );
+        jitRebalancerHook = JITRebalancerHook(hookAddress);
 
         // Approve our hook address to spend these tokens as well
         MockERC20(Currency.unwrap(token0)).approve(
@@ -72,7 +78,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         (key, ) = initPool(
             token0,
             token1,
-            routerHook,
+            jitRebalancerHook,
             3000,
             SQRT_PRICE_1_1,
             ZERO_BYTES
