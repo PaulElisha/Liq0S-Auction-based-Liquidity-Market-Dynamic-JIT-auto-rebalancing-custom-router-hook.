@@ -33,8 +33,6 @@ contract JITRebalancerHook is BaseHook, ReentrancyGuard {
 
     mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
     mapping(PoolId poolId => PoolKey key) public pools;
-    mapping(PoolId poolId => int256 amountSpecifiedRemaining)
-        public idToAmountSpecifiedRemaining;
     mapping(PoolId => Bid[]) public bids;
 
     uint256 public constant THRESHOLD = 100; // 1% threshold in Basis Points Scale
@@ -57,7 +55,16 @@ contract JITRebalancerHook is BaseHook, ReentrancyGuard {
         BalanceDelta,
         bytes calldata hookData
     ) external override onlyPoolManager returns (bytes4, BalanceDelta) {
+        if (hookData.length == 0) {
+            return (this.afterAddLiquidity.selector, delta);
+        }
+
         address sender = abi.decode(hookData, (address));
+
+        if (sender == address(0)) {
+            return (this.afterAddLiquidity.selector, delta);
+        }
+
         _registerLPBid(
             sender,
             key,
@@ -87,7 +94,6 @@ contract JITRebalancerHook is BaseHook, ReentrancyGuard {
         PoolId poolId = key.toId();
 
         poolInfo.update(poolId, poolManager);
-        idToAmountSpecifiedRemaining[poolId] = swapParams.amountSpecified;
 
         (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(poolId);
         uint128 liquidity = poolManager.getLiquidity(poolId);
@@ -167,8 +173,8 @@ contract JITRebalancerHook is BaseHook, ReentrancyGuard {
                 state.sqrtPriceX96,
                 TickMath.getSqrtPriceAtTick(tickLower),
                 TickMath.getSqrtPriceAtTick(tickUpper),
-                uint256(uint128(amount0)),
-                uint256(uint128(amount1))
+                uint256(int256(amount0)),
+                uint256(int256(amount1))
             );
 
             winningBid.tickLower = tickLower;

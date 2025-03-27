@@ -30,93 +30,35 @@ contract JITRebalancerHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
+    JITRebalancerHook jitRebalancerHook;
     Currency token0;
     Currency token1;
-    address priceFeed;
 
-    JITRebalancerHook jitRebalancerHook;
     Quoter public quoter;
     address pairPool;
 
     event NewBalanceDelta(int128 delta0, int128 delta1);
 
     function setUp() public {
-        // Deploy v4 core contracts
         deployFreshManagerAndRouters();
 
-        quoter = new Quoter(manager);
-        // Deploy two test tokens
-        (token0, token1) = deployMintAndApprove2Currencies();
-        // Deploy our hook
         uint160 flags = uint160(
             Hooks.AFTER_ADD_LIQUIDITY_FLAG |
                 Hooks.BEFORE_SWAP_FLAG |
                 Hooks.AFTER_SWAP_FLAG
-        ); //  Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        );
 
         address hookAddress = address(flags);
 
-        deployCodeTo(
-            "JITRebalancerHook.sol",
-            abi.encode(manager, ""),
-            hookAddress
-        );
+        deployCodeTo("JITRebalancerHook.sol", abi.encode(manager), hookAddress);
         jitRebalancerHook = JITRebalancerHook(hookAddress);
 
-        // Approve our hook address to spend these tokens as well
-        MockERC20(Currency.unwrap(token0)).approve(
-            address(routerHook),
-            type(uint256).max
-        );
-        MockERC20(Currency.unwrap(token1)).approve(
-            address(routerHook),
-            type(uint256).max
-        );
-        // MockERC20(Currency.unwrap(token1)).mint(address(manager), 10104739994504904353);
-
-        // Initialize a pool with these two tokens
         (key, ) = initPool(
             token0,
             token1,
             jitRebalancerHook,
             3000,
             SQRT_PRICE_1_1,
-            ZERO_BYTES
-        );
-        // Add initial liquidity to the pool
-
-        // Some liquidity from -60 to +60 tick range
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
-                liquidityDelta: 1000 ether,
-                salt: bytes32(0)
-            }),
-            ZERO_BYTES
-        );
-        // Some liquidity from -120 to +120 tick range
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: -120,
-                tickUpper: 120,
-                liquidityDelta: 1000 ether,
-                salt: bytes32(0)
-            }),
-            ZERO_BYTES
-        );
-
-        // some liquidity for full range
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: TickMath.minUsableTick(60),
-                tickUpper: TickMath.maxUsableTick(60),
-                liquidityDelta: 10000 ether,
-                salt: bytes32(0)
-            }),
             ZERO_BYTES
         );
     }
