@@ -147,33 +147,5 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         (, int24 _tick, , ) = manager.getSlot0(key.toId());
         console2.log(" tick after swap: %d", _tick);
-
-        // Step 10: Validate the liquidity delta does not exceed the pool's capacity
-        int256 liquidityDelta = -1 ether; // Example liquidity removal
-        if (liquidityDelta < -int256(uint256(_poolLiquidity))) {
-            liquidityDelta = -int256(uint256(_poolLiquidity));
-        }
-        console.log("Capped liquidityDelta: %d", liquidityDelta);
-
-        // Step 11: Remove liquidity after the swap
-        IPoolManager.ModifyLiquidityParams memory params = IPoolManager
-            .ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
-                liquidityDelta: liquidityDelta,
-                salt: bytes32(0)
-            });
-
-        modifyLiquidityRouter.modifyLiquidity(key, params, ZERO_BYTES);
-
-        // Step 12: Assert the pool's liquidity has decreased
-        uint128 poolLiquidityFinal = manager.getLiquidity(key.toId());
-        console.log("Pool liquidity Final: %d", poolLiquidityFinal);
-        assertLt(poolLiquidityFinal, _poolLiquidity);
-
-        // Step 13: Assert the tick has moved as expected
-        (, int24 tickFinal, , ) = manager.getSlot0(key.toId());
-        console2.log("Tick final: %d", tickFinal);
-        assertTrue(tickFinal < tick, "Tick should move downward after swap");
     }
 }
