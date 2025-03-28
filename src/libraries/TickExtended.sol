@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity ^0.8.0;
 
 import "@uniswap/v4-core/src/types/PoolId.sol";
 import "@uniswap/v4-core/src/libraries/StateLibrary.sol";
