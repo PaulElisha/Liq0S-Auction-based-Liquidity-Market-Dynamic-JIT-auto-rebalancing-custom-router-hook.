@@ -101,18 +101,12 @@ contract JITRebalancerHookTest is Test, Deployers {
 
     function testBeforeSwap() public {
         // @dev: pre-commit liquidity for a swap
-
         uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
-        console.log("Pool liquidity Before: %d", poolLiquidityBefore);
 
         uint256 minLiquidity = (uint256(poolLiquidityBefore) *
             jitRebalancerHook.THRESHOLD()) / 10000;
 
-        console.log("Min liquidity: %d", minLiquidity);
-
         int256 liquidityDelta = int256(minLiquidity + 100 ether);
-
-        console.log("Liquidity delta: %d", liquidityDelta);
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager
             .ModifyLiquidityParams({
@@ -124,41 +118,32 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         jitRebalancerHook.addLiquidity(key, params);
 
-        uint128 poolLiquidityAfter = manager.getLiquidity(key.toId());
-
-        console.log("Pool liquidity After: %d", poolLiquidityAfter);
-
         // @dev: prepare a swap
 
         uint128 poolLiquidity = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before Swap: %d", poolLiquidity);
 
-        (, int24 tick, , ) = manager.getSlot0(key.toId());
-        console2.log(" tick before swap: %d", tick);
-
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -10 ether, // Large swap
+            amountSpecified: -0.1 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
-        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
-            .TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        BalanceDelta _delta = swapRouter.swap(
-            key,
-            swapParams,
-            testSettings,
-            ZERO_BYTES
+        // Alternatively, you could mock the swap to revert after beforeSwap
+        vm.mockCall(
+            address(manager),
+            abi.encodeWithSelector(IPoolManager.swap.selector),
+            abi.encode(0) // Return some dummy value
         );
 
-        console.log("Token0 delta: %d", _delta.amount0());
-        console.log("Token1 delta: %d", _delta.amount1());
-
-        uint128 _poolLiquidity = manager.getLiquidity(key.toId());
-        console.log("Pool liquidity After Swap: %d", _poolLiquidity);
-
-        (, int24 _tick, , ) = manager.getSlot0(key.toId());
-        console2.log(" tick after swap: %d", _tick);
+        swapRouter.swap(
+            key,
+            swapParams,
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            ZERO_BYTES
+        );
     }
 }

@@ -317,10 +317,9 @@ contract JITRebalancerHook is BaseHook {
         PoolKey calldata key,
         IPoolManager.SwapParams calldata,
         BalanceDelta,
-        bytes calldata data
+        bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
         Bid memory _winningBid = winningBid;
-        uint128 currentliquidity = poolManager.getLiquidity(key.toId());
 
         _removeLiquidity(key, _winningBid);
 
