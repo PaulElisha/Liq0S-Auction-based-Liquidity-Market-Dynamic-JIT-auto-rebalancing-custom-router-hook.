@@ -129,11 +129,10 @@ contract JITRebalancerHookTest is Test, Deployers {
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
-        // Alternatively, you could mock the swap to revert after beforeSwap
         vm.mockCall(
             address(manager),
             abi.encodeWithSelector(IPoolManager.swap.selector),
-            abi.encode(0) // Return some dummy value
+            abi.encode(0)
         );
 
         swapRouter.swap(
