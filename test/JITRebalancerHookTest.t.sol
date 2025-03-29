@@ -63,8 +63,6 @@ contract JITRebalancerHookTest is Test, Deployers {
     }
 
     function testAfterAddLiquidity() public {
-        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(key.toId());
-
         uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before: %d", poolLiquidityBefore);
 
@@ -77,8 +75,6 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         console.log("Liquidity delta: %d", liquidityDelta);
 
-        bytes memory hookData;
-
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager
             .ModifyLiquidityParams({
                 tickLower: -60,
@@ -87,29 +83,11 @@ contract JITRebalancerHookTest is Test, Deployers {
                 salt: bytes32(0)
             });
 
-        // (uint256 _amount0, uint256 _amount1) = LiquidityAmounts
-        //     .getAmountsForLiquidity(
-        //         sqrtPriceX96,
-        //         TickMath.getSqrtPriceAtTick(params.tickLower),
-        //         TickMath.getSqrtPriceAtTick(params.tickUpper),
-        //         uint128(uint256(params.liquidityDelta))
-        //     );
-
-        (uint256 amount0, uint256 amount1) = jitRebalancerHook.addLiquidity(
-            key,
-            params,
-            hookData
-        );
+        jitRebalancerHook.addLiquidity(key, params);
 
         uint128 poolLiquidityAfter = manager.getLiquidity(key.toId());
 
         console.log("Pool liquidity After: %d", poolLiquidityAfter);
-
-        console.log("Token0 delta: %d", amount0);
-        console.log("Token1 delta: %d", amount1);
-
-        // assertLt(amount0, _amount0);
-        // assertLt(amount1, _amount1);
 
         JITRebalancerHook.Bid[] memory bids;
 
@@ -122,9 +100,7 @@ contract JITRebalancerHookTest is Test, Deployers {
     }
 
     function testBeforeSwap() public {
-        // testAfterAddLiquidity();
-
-        // @dev: pre-commit liquidity
+        // @dev: pre-commit liquidity for a swap
 
         uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before: %d", poolLiquidityBefore);
@@ -134,11 +110,9 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         console.log("Min liquidity: %d", minLiquidity);
 
-        int256 liquidityDelta = int256(minLiquidity + 1 ether);
+        int256 liquidityDelta = int256(minLiquidity + 100 ether);
 
         console.log("Liquidity delta: %d", liquidityDelta);
-
-        bytes memory hookData = abi.encode(address(this));
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager
             .ModifyLiquidityParams({
@@ -148,18 +122,11 @@ contract JITRebalancerHookTest is Test, Deployers {
                 salt: bytes32(0)
             });
 
-        BalanceDelta delta = modifyLiquidityRouter.modifyLiquidity(
-            key,
-            params,
-            hookData
-        );
+        jitRebalancerHook.addLiquidity(key, params);
 
         uint128 poolLiquidityAfter = manager.getLiquidity(key.toId());
 
         console.log("Pool liquidity After: %d", poolLiquidityAfter);
-
-        console.log("Token0 delta: %d", delta.amount0());
-        console.log("Token1 delta: %d", delta.amount1());
 
         // @dev: prepare a swap
 
@@ -171,7 +138,7 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -1 ether, // Large swap
+            amountSpecified: -10 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 

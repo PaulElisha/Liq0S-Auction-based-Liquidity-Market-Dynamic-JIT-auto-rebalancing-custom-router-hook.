@@ -18,6 +18,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./libraries/TrySwap.sol";
 import "./libraries/TickExtended.sol";
 import "./libraries/PoolExtended.sol";
+import "@uniswap/v4-core/src/libraries/SafeCast.sol";
 
 import {Test, console2, console, stdError} from "forge-std/Test.sol";
 
@@ -31,6 +32,7 @@ contract JITRebalancerHook is BaseHook {
     using PoolExtended for *;
     using TickExtended for *;
     using TrySwap for IPoolManager;
+    using SafeCast for *;
 
     mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
     mapping(PoolId poolId => PoolKey key) public pools;
@@ -51,11 +53,17 @@ contract JITRebalancerHook is BaseHook {
     Bid winningBid;
 
     struct CallbackData {
-        PoolKey key; // Amount of each token to add as liquidity
-        uint256 amount0;
-        uint256 amount1;
+        PoolKey key;
         IPoolManager.ModifyLiquidityParams params;
+        address sender;
     }
+
+    struct DeltaAmounts {
+        uint256 amount0Delta;
+        uint256 amount1Delta;
+    }
+
+    mapping(address sender => DeltaAmounts) amounts;
 
     event BidRegistered(
         address indexed bidder,
@@ -72,48 +80,56 @@ contract JITRebalancerHook is BaseHook {
     function unlockCallback(
         bytes calldata data
     ) external returns (bytes memory) {
-        CallbackData memory callbackData = abi.decode(data, (CallbackData));
-        PoolKey memory key = callbackData.key;
-        uint256 amount0 = callbackData.amount0;
-        uint256 amount1 = callbackData.amount1;
-        IPoolManager.ModifyLiquidityParams memory params = callbackData.params;
+        CallbackData memory _data = abi.decode(data, (CallbackData));
 
-        console.log("amount0: %d, amount1: %d", amount0, amount1);
-
-        // Settle the currencies with the sender
-        key.currency0.settle(
-            poolManager,
-            address(this),
-            amount0,
-            false // `burn` = `false` means transferring tokens, not burning
+        (BalanceDelta delta, ) = poolManager.modifyLiquidity(
+            _data.key,
+            _data.params,
+            hex""
         );
 
-        key.currency1.settle(poolManager, address(this), amount1, false);
+        uint256 amount0Delta = delta.amount0() < 0
+            ? uint256(uint128(-delta.amount0()))
+            : uint256(uint128(delta.amount0()));
 
-        console.log("Currencies settled");
-        // // Take the currencies into the hook
-        key.currency0.take(
-            poolManager,
-            address(this),
-            amount0,
-            true // `true` = mint claim tokens for the hook
+        uint256 amount1Delta = delta.amount1() < 0
+            ? uint256(uint128(-delta.amount1()))
+            : uint256(uint128(delta.amount1()));
+
+        amounts[_data.sender] = DeltaAmounts({
+            amount0Delta: amount0Delta,
+            amount1Delta: amount1Delta
+        });
+
+        console.log(
+            "amount0Delta: %d, amount1Delta: %d",
+            amount0Delta,
+            amount1Delta
         );
-        key.currency1.take(poolManager, address(this), amount1, true);
 
-        console.log("Currencies taken");
-
-        poolManager.modifyLiquidity(key, callbackData.params, hex"");
-
-        console.log("Liquidity modified");
+        _transferAndSettle(_data.key.currency0, _data.sender, amount0Delta);
+        _transferAndSettle(_data.key.currency1, _data.sender, amount1Delta);
 
         return hex"";
     }
 
+    function _transferAndSettle(
+        Currency currency,
+        address sender,
+        uint256 amount
+    ) internal {
+        IERC20(Currency.unwrap(currency)).transferFrom(
+            sender,
+            address(this),
+            amount
+        );
+        currency.settle(poolManager, address(this), amount, false);
+    }
+
     function addLiquidity(
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
-        bytes calldata hookData
-    ) external returns (uint256 amount0, uint256 amount1) {
+        IPoolManager.ModifyLiquidityParams calldata params
+    ) external {
         uint128 poolLiquidity = poolManager.getLiquidity(key.toId());
 
         uint256 minLiquidity = (uint256(poolLiquidity) * THRESHOLD) / 10000;
@@ -123,51 +139,13 @@ contract JITRebalancerHook is BaseHook {
             "Insufficient liquidity for large swaps"
         );
 
-        (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(key.toId());
-
-        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(params.tickLower),
-            TickMath.getSqrtPriceAtTick(params.tickUpper),
-            uint128(uint256(params.liquidityDelta))
-        );
-
-        IERC20(Currency.unwrap(key.currency0)).transferFrom(
-            msg.sender,
-            address(this),
-            amount0
-        );
-
-        IERC20(Currency.unwrap(key.currency1)).transferFrom(
-            msg.sender,
-            address(this),
-            amount1
-        );
-
-        IERC20(Currency.unwrap(key.currency0)).approve(
-            address(poolManager),
-            amount0
-        );
-
-        IERC20(Currency.unwrap(key.currency1)).approve(
-            address(poolManager),
-            amount1
-        );
-
         poolManager.unlock(
             abi.encode(
-                CallbackData({
-                    key: key,
-                    amount0: amount0,
-                    amount1: amount1,
-                    params: params
-                })
+                CallbackData({key: key, params: params, sender: msg.sender})
             )
         );
 
-        // poolManager.modifyLiquidity(key, params, hookData);
-
-        _registerLPBid(msg.sender, key, amount0, amount1, params);
+        _registerLPBid(msg.sender, key, 0, 0, params);
     }
 
     function _registerLPBid(
@@ -300,7 +278,7 @@ contract JITRebalancerHook is BaseHook {
             }
 
             {
-                _adjustLiquidity(key, tickLower, tickUpper, state);
+                _adjustLiquidity(key, tickLower, tickUpper, state, winningBid);
             }
         }
     }
@@ -309,38 +287,29 @@ contract JITRebalancerHook is BaseHook {
         PoolKey memory key,
         int24 tickLower,
         int24 tickUpper,
-        Pool.SwapResult memory state
+        Pool.SwapResult memory state,
+        Bid memory _winningBid
     ) internal {
-        Bid memory _winningBid = winningBid;
+        _removeLiquidity(key, _winningBid);
+        // Bid memory _winningBid = winningBid;
+        _winningBid.amount0 = amounts[_winningBid.bidderAddress].amount0Delta;
+        _winningBid.amount1 = amounts[_winningBid.bidderAddress].amount1Delta;
         uint128 liquidityDelta;
         {
             liquidityDelta = LiquidityAmounts.getLiquidityForAmounts(
                 state.sqrtPriceX96,
                 TickMath.getSqrtPriceAtTick(tickLower),
                 TickMath.getSqrtPriceAtTick(tickUpper),
-                uint256(int256(_winningBid.amount0)),
-                uint256(int256(_winningBid.amount1))
+                _winningBid.amount0,
+                _winningBid.amount1
             );
         }
 
-        winningBid.tickLower = tickLower;
-        winningBid.tickUpper = tickUpper;
-        winningBid.liquidityDelta = int256(int128(liquidityDelta));
+        _winningBid.tickLower = tickLower;
+        _winningBid.tickUpper = tickUpper;
+        _winningBid.liquidityDelta = int256(int128(liquidityDelta));
 
-        {
-            (BalanceDelta delta, ) = poolManager.modifyLiquidity(
-                key,
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    liquidityDelta: int256(int128(liquidityDelta)),
-                    salt: 0
-                }),
-                hex""
-            );
-
-            _handleBalanceAccounting(delta, address(this), key);
-        }
+        _addLiquidity(key, _winningBid);
     }
 
     function _afterSwap(
@@ -353,16 +322,7 @@ contract JITRebalancerHook is BaseHook {
         Bid memory _winningBid = winningBid;
         uint128 currentliquidity = poolManager.getLiquidity(key.toId());
 
-        console.log("Current liquidity: %d", currentliquidity);
-
-        console.log(
-            "Winning bid liquidity delta: %d",
-            winningBid.liquidityDelta
-        );
-
-        BalanceDelta delta = _removeLiquidity(key, _winningBid, data);
-
-        _handleBalanceAccounting(delta, address(this), key);
+        _removeLiquidity(key, _winningBid);
 
         // @dev: delete the pool from the mapping
         delete bids[key.toId()];
@@ -370,13 +330,34 @@ contract JITRebalancerHook is BaseHook {
         return (this.afterSwap.selector, 0);
     }
 
+    function _addLiquidity(
+        PoolKey memory key,
+        Bid memory _winningBid
+    ) internal {
+        {
+            (BalanceDelta delta, ) = poolManager.modifyLiquidity(
+                key,
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: _winningBid.tickLower,
+                    tickUpper: _winningBid.tickUpper,
+                    liquidityDelta: _winningBid.liquidityDelta,
+                    salt: 0
+                }),
+                hex""
+            );
+
+            _handleBalanceAccounting(delta, address(this), key);
+        }
+
+        winningBid = _winningBid;
+    }
+
     function _removeLiquidity(
         PoolKey memory key,
-        Bid memory _winningBid,
-        bytes calldata hookData
-    ) internal returns (BalanceDelta delta) {
+        Bid memory _winningBid
+    ) internal {
         {
-            (delta, ) = poolManager.modifyLiquidity(
+            (BalanceDelta delta, ) = poolManager.modifyLiquidity(
                 key,
                 IPoolManager.ModifyLiquidityParams({
                     tickLower: _winningBid.tickLower,
@@ -384,10 +365,10 @@ contract JITRebalancerHook is BaseHook {
                     liquidityDelta: -int256(_winningBid.liquidityDelta),
                     salt: 0
                 }),
-                hookData
+                hex""
             );
 
-            _handleBalanceAccounting(delta, _winningBid.bidderAddress, key);
+            _handleBalanceAccounting(delta, address(this), key);
         }
     }
 
@@ -434,54 +415,31 @@ contract JITRebalancerHook is BaseHook {
         address recipient,
         PoolKey memory key
     ) internal {
-        if (delta.amount0() > 0) {
-            poolManager.take(
+        delta.amount0() < 0
+            ? key.currency0.settle(
+                poolManager,
+                recipient,
+                uint256(uint128(-delta.amount0())),
+                false
+            )
+            : poolManager.take(
                 key.currency0,
                 recipient,
                 uint128(delta.amount0())
             );
-        } else if (delta.amount0() < 0) {
-            // _approveAndSettle(
-            //     key.currency0,
-            //     recipient,
-            //     uint128(-delta.amount0())
-            // );
 
-            IERC20(Currency.unwrap(key.currency0)).transferFrom(
+        delta.amount1() < 0
+            ? key.currency1.settle(
+                poolManager,
                 recipient,
-                address(poolManager),
-                uint128(-delta.amount0())
-            );
-        }
-
-        if (delta.amount1() > 0) {
-            poolManager.take(
+                uint256(uint128(-delta.amount1())),
+                false
+            )
+            : poolManager.take(
                 key.currency1,
                 recipient,
                 uint128(delta.amount1())
             );
-        } else if (delta.amount1() < 0) {
-            // _approveAndSettle(
-            //     key.currency1,
-            //     recipient,
-            //     uint128(-delta.amount1())
-            // );
-
-            IERC20(Currency.unwrap(key.currency1)).transferFrom(
-                recipient,
-                address(poolManager),
-                uint128(-delta.amount1())
-            );
-        }
-    }
-
-    function _approveAndSettle(
-        Currency currency,
-        address recipient,
-        uint128 amount
-    ) internal {
-        IERC20(Currency.unwrap(currency)).approve(address(poolManager), amount);
-        currency.settle(poolManager, recipient, uint256(amount), false);
     }
 
     function _arePoolKeysEqual(
