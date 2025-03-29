@@ -62,7 +62,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         token1.approve(address(jitRebalancerHook), type(uint256).max);
     }
 
-    function testAfterAddLiquidity() public {
+    function testAddLiquidity() public {
         uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before: %d", poolLiquidityBefore);
 
