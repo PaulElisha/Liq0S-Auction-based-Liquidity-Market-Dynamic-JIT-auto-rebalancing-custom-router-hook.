@@ -47,10 +47,15 @@ The `TrySwap` library interacts directly with Uniswap V4 contract so it's perfec
 
 
 Ran 3 tests for test/JITRebalancerHookTest.t.sol:JITRebalancerHookTest
+
+---
+
+```
 [PASS] testAddLiquidity() (gas: 578392)
 [PASS] testBeforeSwap() (gas: 1211477)
 [PASS] testSwap() (gas: 1211090)
 Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.58ms (3.09ms CPU time)
+```
 
 ## Foundry
 
