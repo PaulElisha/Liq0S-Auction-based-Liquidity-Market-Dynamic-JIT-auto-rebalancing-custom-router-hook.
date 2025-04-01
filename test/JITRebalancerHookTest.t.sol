@@ -165,7 +165,7 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -20 ether, // Large swap
+            amountSpecified: 20 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 

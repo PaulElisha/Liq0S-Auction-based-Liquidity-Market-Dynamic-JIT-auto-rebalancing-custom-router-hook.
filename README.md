@@ -31,7 +31,23 @@ It computes liquidityDelta based on the amount of a token in the pool.
 
 4. It gives infinite approval of both tokens in the liquidity manager pool which is risky approach.
 
+---
+
 ## Solution
+
+1. Uniswap V3 and V4 boosts of capital efficiency for LPs but capital is not fully efficient if they are not where they are most needed. This Hook dynamically adjust liquidity around large swaps.
+
+2. Prevents MEV front-running by ensuring atomic or same block transactions.
+
+3. Market makers are not fully automated without a dynamic liquidity management or rebalancer. It enables market making on demand by placing liquidity in areas of high surge without manual control from LPs.
+
+4. Adjusting liquidity positions for all kinds of simple and complex swaps while enabling passive yield for LPs.
+
+5. It does not require a separate liquidity manager contract. It fosters the utility of stale liquidity that could cause impermanent loss.
+
+---
+
+## Mechanism
 
 1. This contract manages pools by their `key` and `Id`. 
 
