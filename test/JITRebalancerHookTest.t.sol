@@ -122,6 +122,9 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint128 poolLiquidity = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before Swap: %d", poolLiquidity);
 
+        uint256 token0BalanceBefore = token0.balanceOf(address(this));
+        uint256 token1BalanceBefore = token1.balanceOf(address(this));
+
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -20 ether, // Large swap
@@ -137,6 +140,17 @@ contract JITRebalancerHookTest is Test, Deployers {
             }),
             ZERO_BYTES
         );
+
+        uint256 token0BalanceAfter = token0.balanceOf(address(this));
+        uint256 token1BalanceAfter = token1.balanceOf(address(this));
+
+        assertLt(token0BalanceAfter, token0BalanceBefore);
+        assertGt(token1BalanceAfter, token1BalanceBefore);
+
+        JITRebalancerHook.Bid[] memory bids = jitRebalancerHook.getBids(
+            key.toId()
+        );
+        assertEq(bids.length, 0);
     }
 
     function testSwap() public {
@@ -163,6 +177,9 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint128 poolLiquidity = manager.getLiquidity(key.toId());
         console.log("Pool liquidity Before Swap: %d", poolLiquidity);
 
+        uint256 token0BalanceBefore = token0.balanceOf(address(this));
+        uint256 token1BalanceBefore = token1.balanceOf(address(this));
+
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: 20 ether, // Large swap
@@ -178,5 +195,16 @@ contract JITRebalancerHookTest is Test, Deployers {
             }),
             hex""
         );
+
+        uint256 token0BalanceAfter = token0.balanceOf(address(this));
+        uint256 token1BalanceAfter = token1.balanceOf(address(this));
+
+        assertLt(token0BalanceAfter, token0BalanceBefore);
+        assertGt(token1BalanceAfter, token1BalanceBefore);
+
+        JITRebalancerHook.Bid[] memory bids = jitRebalancerHook.getBids(
+            key.toId()
+        );
+        assertEq(bids.length, 0);
     }
 }
