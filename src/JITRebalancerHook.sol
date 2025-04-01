@@ -15,6 +15,7 @@ import "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import "v4-periphery/src/utils/BaseHook.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./libraries/TrySwap.sol";
 import "./libraries/TickExtended.sol";
 import "./libraries/PoolExtended.sol";
@@ -32,7 +33,7 @@ contract JITRebalancerHook is BaseHook {
     using PoolExtended for *;
     using TickExtended for *;
     using TrySwap for IPoolManager;
-    using SafeCast for *;
+    using SafeERC20 for IERC20;
 
     uint256 public constant THRESHOLD = 100; // 1% threshold in Basis Points Scale
 
@@ -44,9 +45,7 @@ contract JITRebalancerHook is BaseHook {
         uint256 deltaAmount0;
         uint256 deltaAmount1;
         int256 liquidityDelta;
-        uint160 sqrtPriceX96;
     }
-    uint256 highestBidderIndex;
     Bid highestBidder;
 
     struct CallbackData {
@@ -116,10 +115,8 @@ contract JITRebalancerHook is BaseHook {
             ? uint256(uint128(-delta.amount1()))
             : uint256(uint128(delta.amount1()));
 
-        amounts[_data.sender] = DeltaAmounts({
-            amount0Delta: amount0Delta,
-            amount1Delta: amount1Delta
-        });
+        amounts[_data.sender].amount0Delta = amount0Delta;
+        amounts[_data.sender].amount1Delta = amount1Delta;
 
         console.log(
             "amount0Delta: %d, amount1Delta: %d",
@@ -138,7 +135,7 @@ contract JITRebalancerHook is BaseHook {
         address sender,
         uint256 amount
     ) internal {
-        IERC20(Currency.unwrap(currency)).transferFrom(
+        IERC20(Currency.unwrap(currency)).safeTransferFrom(
             sender,
             address(this),
             amount
@@ -155,7 +152,7 @@ contract JITRebalancerHook is BaseHook {
         uint256 minLiquidity = (uint256(poolLiquidity) * THRESHOLD) / 10000;
 
         require(
-            uint256(params.liquidityDelta) >= minLiquidity,
+            uint256(params.liquidityDelta) > minLiquidity,
             "Insufficient liquidity for large swaps"
         );
 
@@ -194,8 +191,7 @@ contract JITRebalancerHook is BaseHook {
                 tickUpper: params.tickUpper,
                 deltaAmount0: amount0,
                 deltaAmount1: amount1,
-                liquidityDelta: params.liquidityDelta,
-                sqrtPriceX96: 0
+                liquidityDelta: params.liquidityDelta
             })
         );
 
@@ -432,10 +428,9 @@ contract JITRebalancerHook is BaseHook {
         console.log("..............................................");
 
         Bid memory _highestBidder = highestBidder;
-        // BalanceDelta deltaRemoved = _removeLiquidity(key, _highestBidder);
         _transferTokensToBidder(
             key,
-            _highestBidder.bidderAddress,
+            address(this),
             int128(int256(delta.amount0())),
             int128(int256(delta.amount1()))
         );
@@ -467,8 +462,6 @@ contract JITRebalancerHook is BaseHook {
             // console.log("Balance for Final Liquidity Removal:", balance);
             if (balance >= amount0Owned) {
                 poolManager.take(key.currency0, bidder, amount0Owned);
-            } else {
-                poolManager.take(key.currency0, bidder, amount0Owned);
             }
         }
     }
@@ -493,14 +486,14 @@ contract JITRebalancerHook is BaseHook {
         uint128 poolLiquidity = poolManager.getLiquidity(poolId);
         uint256 minLiquidity = (uint256(poolLiquidity) * THRESHOLD) / 10000;
 
-        uint256 winningIndex = type(uint256).max; // Sentinel value
+        uint256 winningIndex = type(uint256).max;
         int256 maxLiquidity;
 
         for (uint256 i; i < poolBids.length; ) {
-            Bid storage bid = poolBids[i];
+            Bid memory bid = poolBids[i];
             if (
-                bid.liquidityDelta >= maxLiquidity &&
-                bid.liquidityDelta >= int256(minLiquidity)
+                bid.liquidityDelta > maxLiquidity &&
+                bid.liquidityDelta > int256(minLiquidity)
             ) {
                 maxLiquidity = bid.liquidityDelta;
                 winningIndex = i;
@@ -515,7 +508,6 @@ contract JITRebalancerHook is BaseHook {
             poolBids[winningIndex] = poolBids[poolBids.length - 1];
             poolBids.pop();
 
-            // Add validation (critical!)
             require(
                 _winningBid.tickLower < _winningBid.tickUpper,
                 "Invalid bid ticks"
