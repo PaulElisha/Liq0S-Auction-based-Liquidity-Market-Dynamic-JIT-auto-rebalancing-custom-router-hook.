@@ -123,8 +123,10 @@ Suite result: ok. 3 passed; 0 failed; 0 skipped
 ---
 
 ## **Future Roadmap**  
-- **NFT Position Delegation**: Represent LP positions as NFTs for auto-rebalancing.  
-- **Cross-Chain Expansion**: Extend to other AMMs (e.g., PancakeSwap).  
+- **NFT Position Delegation**: Represent LP positions as NFTs for auto-rebalancing. 
+- **Deployment on Unichain**: Deploy the Uniswap V4 Hook on Unichain. 
+<!-- 
+- **Cross-Chain Expansion**: Extend to other AMMs (e.g., PancakeSwap).   -->
 - **Institutional Tools**: Optimize for hedge funds and DAOs.  
 
 ---
