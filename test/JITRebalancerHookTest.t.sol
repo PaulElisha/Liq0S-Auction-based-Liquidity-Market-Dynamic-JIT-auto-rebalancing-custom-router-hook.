@@ -21,6 +21,7 @@ import "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {JITRebalancerHook} from "../src/JITRebalancerHook.sol";
 
 contract JITRebalancerHookTest is Test, Deployers {
+    event NewBalanceDelta(int256 amount0, int256 amount1);
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -29,13 +30,11 @@ contract JITRebalancerHookTest is Test, Deployers {
     MockERC20 token0;
     MockERC20 token1;
 
-    address pairPool;
-
     function setUp() public {
         deployFreshManagerAndRouters();
 
         token0 = new MockERC20();
-        token0.mint(address(this), 100 ether);
+        token0.mint(address(this), 200 ether);
 
         token1 = new MockERC20();
         token1.mint(address(this), 100 ether);
@@ -55,8 +54,8 @@ contract JITRebalancerHookTest is Test, Deployers {
             SQRT_PRICE_1_1
         );
 
-        // token0.approve(address(swapRouter), type(uint256).max);
-        // token1.approve(address(swapRouter), type(uint256).max);
+        token0.approve(address(swapRouter), 200 ether);
+        token1.approve(address(swapRouter), 200 ether);
 
         token0.approve(address(jitRebalancerHook), type(uint256).max);
         token1.approve(address(jitRebalancerHook), type(uint256).max);
@@ -125,7 +124,7 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -0.1 ether, // Large swap
+            amountSpecified: -0.05 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
@@ -143,6 +142,47 @@ contract JITRebalancerHookTest is Test, Deployers {
                 settleUsingBurn: false
             }),
             ZERO_BYTES
+        );
+    }
+
+    function testSwap() public {
+        // @dev: pre-commit liquidity for a swap
+        uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
+
+        uint256 minLiquidity = (uint256(poolLiquidityBefore) *
+            jitRebalancerHook.THRESHOLD()) / 10000;
+
+        int256 liquidityDelta = int256(minLiquidity + 0.2 ether);
+
+        IPoolManager.ModifyLiquidityParams memory params = IPoolManager
+            .ModifyLiquidityParams({
+                tickLower: -60,
+                tickUpper: 60,
+                liquidityDelta: liquidityDelta,
+                salt: bytes32(0)
+            });
+
+        jitRebalancerHook.addLiquidity(key, params);
+
+        // @dev: prepare a swap
+
+        uint128 poolLiquidity = manager.getLiquidity(key.toId());
+        console.log("Pool liquidity Before Swap: %d", poolLiquidity);
+
+        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -20 ether, // Large swap
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+
+        swapRouter.swap(
+            key,
+            swapParams,
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            hex""
         );
     }
 }

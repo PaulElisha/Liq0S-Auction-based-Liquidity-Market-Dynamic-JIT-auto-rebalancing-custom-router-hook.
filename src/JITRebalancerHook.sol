@@ -34,10 +34,6 @@ contract JITRebalancerHook is BaseHook {
     using TrySwap for IPoolManager;
     using SafeCast for *;
 
-    mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
-    mapping(PoolId poolId => PoolKey key) public pools;
-    mapping(PoolId poolId => Bid[]) public bids;
-
     uint256 public constant THRESHOLD = 100; // 1% threshold in Basis Points Scale
 
     struct Bid {
@@ -45,12 +41,13 @@ contract JITRebalancerHook is BaseHook {
         PoolId poolId;
         int24 tickLower;
         int24 tickUpper;
-        uint256 amount0;
-        uint256 amount1;
+        uint256 deltaAmount0;
+        uint256 deltaAmount1;
         int256 liquidityDelta;
+        uint160 sqrtPriceX96;
     }
-
-    Bid winningBid;
+    uint256 highestBidderIndex;
+    Bid highestBidder;
 
     struct CallbackData {
         PoolKey key;
@@ -64,16 +61,39 @@ contract JITRebalancerHook is BaseHook {
     }
 
     mapping(address sender => DeltaAmounts) amounts;
+    mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
+    mapping(PoolId poolId => PoolKey key) public pools;
+    mapping(PoolId poolId => Bid[]) public bids;
 
     event BidRegistered(
-        address indexed bidder,
-        PoolId indexed poolId,
+        address bidder,
+        PoolId poolId,
         int24 tickLower,
         int24 tickUpper,
-        uint256 amount0,
-        uint256 amount1,
+        uint256 deltaAmount0,
+        uint256 deltaAmount1,
         int256 liquidityDelta
     );
+
+    event OptimalLiquidityProvision(
+        address sender,
+        int24 tickLower,
+        int24 tickUpper,
+        int256 liquidityDelta,
+        uint256 amount0Owed,
+        uint256 amount1Owed
+    );
+
+    event LiquidityRemoved(
+        address sender,
+        int24 tickLower,
+        int24 tickUpper,
+        int256 liquidityDelta,
+        uint256 amount0Owned,
+        uint256 amount1Owned
+    );
+
+    event BidderSelected(address bidder);
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
@@ -145,7 +165,10 @@ contract JITRebalancerHook is BaseHook {
             )
         );
 
-        _registerLPBid(msg.sender, key, 0, 0, params);
+        uint256 deltaAmount0 = amounts[msg.sender].amount0Delta;
+        uint256 deltaAmount1 = amounts[msg.sender].amount1Delta;
+
+        _registerLPBid(msg.sender, key, deltaAmount0, deltaAmount1, params);
     }
 
     function _registerLPBid(
@@ -169,9 +192,10 @@ contract JITRebalancerHook is BaseHook {
                 poolId: poolId,
                 tickLower: params.tickLower,
                 tickUpper: params.tickUpper,
-                amount0: amount0,
-                amount1: amount1,
-                liquidityDelta: params.liquidityDelta
+                deltaAmount0: amount0,
+                deltaAmount1: amount1,
+                liquidityDelta: params.liquidityDelta,
+                sqrtPriceX96: 0
             })
         );
 
@@ -269,16 +293,13 @@ contract JITRebalancerHook is BaseHook {
                 );
             }
 
-            {
-                winningBid = _selectWinningBid(poolId);
-                require(
-                    winningBid.bidderAddress != address(0),
-                    "No valid bids"
-                );
-            }
+            require(
+                tickLower <= state.tick && state.tick <= tickUpper,
+                "Position does not cover post-swap price"
+            );
 
             {
-                _adjustLiquidity(key, tickLower, tickUpper, state, winningBid);
+                _adjustLiquidity(key, tickLower, tickUpper, state);
             }
         }
     }
@@ -287,91 +308,172 @@ contract JITRebalancerHook is BaseHook {
         PoolKey memory key,
         int24 tickLower,
         int24 tickUpper,
-        Pool.SwapResult memory state,
-        Bid memory _winningBid
+        Pool.SwapResult memory state
     ) internal {
-        _removeLiquidity(key, _winningBid);
-        // Bid memory _winningBid = winningBid;
-        _winningBid.amount0 = amounts[_winningBid.bidderAddress].amount0Delta;
-        _winningBid.amount1 = amounts[_winningBid.bidderAddress].amount1Delta;
-        uint128 liquidityDelta;
+        highestBidder = _selectWinningBid(key.toId());
+
+        require(
+            highestBidder.bidderAddress != address(0),
+            "No valid bid for address"
+        );
+
+        emit BidderSelected(highestBidder.bidderAddress);
+
+        // @dev: update the highestBidder amounts removed
+        console.log("............................................");
+        console.log("Removed initial liquidity for highest bidder");
+        console.log("............................................");
+
+        BalanceDelta highestBidderDelta = _removeLiquidity(key, highestBidder);
+
         {
-            liquidityDelta = LiquidityAmounts.getLiquidityForAmounts(
-                state.sqrtPriceX96,
-                TickMath.getSqrtPriceAtTick(tickLower),
-                TickMath.getSqrtPriceAtTick(tickUpper),
-                _winningBid.amount0,
-                _winningBid.amount1
+            highestBidder.deltaAmount0 = highestBidderDelta.amount0() < 0
+                ? uint256(uint128(-highestBidderDelta.amount0()))
+                : uint256(uint128(highestBidderDelta.amount0()));
+
+            highestBidder.deltaAmount1 = highestBidderDelta.amount1() < 0
+                ? uint256(uint128(-highestBidderDelta.amount1()))
+                : uint256(uint128(highestBidderDelta.amount1()));
+        }
+
+        console.log(
+            "Removed amount0Delta: %d and amount1Delta: %d",
+            highestBidder.deltaAmount0,
+            highestBidder.deltaAmount1
+        );
+        // @dev: optimal liquidity addition for large swaps
+
+        // @dev: optimal liquidityDelta for next range;
+        {
+            highestBidder.liquidityDelta = int256(
+                int128(
+                    LiquidityAmounts.getLiquidityForAmounts(
+                        state.sqrtPriceX96,
+                        TickMath.getSqrtPriceAtTick(tickLower),
+                        TickMath.getSqrtPriceAtTick(tickUpper),
+                        highestBidder.deltaAmount0,
+                        highestBidder.deltaAmount1
+                    )
+                )
             );
         }
 
-        _winningBid.tickLower = tickLower;
-        _winningBid.tickUpper = tickUpper;
-        _winningBid.liquidityDelta = int256(int128(liquidityDelta));
+        console.log("..............................................");
+        console.log("Added optimal liquidity for the Highest Bidder");
+        console.log("..............................................");
 
-        _addLiquidity(key, _winningBid);
+        console.log("Optimal liquidity:", highestBidder.liquidityDelta);
+
+        // @dev: update next tick ranges
+        highestBidder.tickLower = tickLower;
+        highestBidder.tickUpper = tickUpper;
+
+        _addLiquidity(key, highestBidder);
+    }
+
+    function _addLiquidity(
+        PoolKey memory key,
+        Bid memory _highestBidder
+    ) internal {
+        {
+            (BalanceDelta deltaAdded, ) = poolManager.modifyLiquidity(
+                key,
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: _highestBidder.tickLower,
+                    tickUpper: _highestBidder.tickUpper,
+                    liquidityDelta: _highestBidder.liquidityDelta,
+                    salt: 0
+                }),
+                hex""
+            );
+
+            emit OptimalLiquidityProvision(
+                _highestBidder.bidderAddress,
+                _highestBidder.tickLower,
+                _highestBidder.tickUpper,
+                _highestBidder.liquidityDelta,
+                uint256(uint128(_highestBidder.deltaAmount0)),
+                uint256(uint128(_highestBidder.deltaAmount1))
+            );
+
+            _handleBalanceAccounting(deltaAdded, address(this), key);
+        }
+    }
+
+    function _removeLiquidity(
+        PoolKey memory key,
+        Bid memory _highestBidder
+    ) internal returns (BalanceDelta deltaRemoved) {
+        {
+            (deltaRemoved, ) = poolManager.modifyLiquidity(
+                key,
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: _highestBidder.tickLower,
+                    tickUpper: _highestBidder.tickUpper,
+                    liquidityDelta: -_highestBidder.liquidityDelta,
+                    salt: 0
+                }),
+                hex""
+            );
+
+            _handleBalanceAccounting(deltaRemoved, address(this), key);
+        }
     }
 
     function _afterSwap(
         address,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata,
-        BalanceDelta,
+        BalanceDelta delta,
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
-        Bid memory _winningBid = winningBid;
+        console.log("..............................................");
+        console.log("Swapping......................................");
+        console.log("..............................................");
 
-        _removeLiquidity(key, _winningBid);
+        Bid memory _highestBidder = highestBidder;
+        // BalanceDelta deltaRemoved = _removeLiquidity(key, _highestBidder);
+        _transferTokensToBidder(
+            key,
+            _highestBidder.bidderAddress,
+            int128(int256(delta.amount0())),
+            int128(int256(delta.amount1()))
+        );
 
-        // @dev: delete the pool from the mapping
-        delete bids[key.toId()];
+        emit LiquidityRemoved(
+            _highestBidder.bidderAddress,
+            _highestBidder.tickLower,
+            _highestBidder.tickUpper,
+            _highestBidder.liquidityDelta,
+            uint256(uint128(delta.amount0())),
+            uint256(uint128(delta.amount1()))
+        );
 
         return (this.afterSwap.selector, 0);
     }
 
-    function _addLiquidity(
+    function _transferTokensToBidder(
         PoolKey memory key,
-        Bid memory _winningBid
+        address bidder,
+        int128 amount0,
+        int128 amount1
     ) internal {
-        {
-            (BalanceDelta delta, ) = poolManager.modifyLiquidity(
-                key,
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: _winningBid.tickLower,
-                    tickUpper: _winningBid.tickUpper,
-                    liquidityDelta: _winningBid.liquidityDelta,
-                    salt: 0
-                }),
-                hex""
+        if (amount0 > 0) {
+            uint256 amount0Owned = uint256(uint128(amount0));
+            uint256 balance = IERC20(Currency.unwrap(key.currency0)).balanceOf(
+                address(poolManager)
             );
-
-            _handleBalanceAccounting(delta, address(this), key);
-        }
-
-        winningBid = _winningBid;
-    }
-
-    function _removeLiquidity(
-        PoolKey memory key,
-        Bid memory _winningBid
-    ) internal {
-        {
-            (BalanceDelta delta, ) = poolManager.modifyLiquidity(
-                key,
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: _winningBid.tickLower,
-                    tickUpper: _winningBid.tickUpper,
-                    liquidityDelta: -int256(_winningBid.liquidityDelta),
-                    salt: 0
-                }),
-                hex""
-            );
-
-            _handleBalanceAccounting(delta, address(this), key);
+            // console.log("Balance Amount0 Owned:", amount0Owned);
+            // console.log("Balance for Final Liquidity Removal:", balance);
+            if (balance >= amount0Owned) {
+                poolManager.take(key.currency0, bidder, amount0Owned);
+            } else {
+                poolManager.take(key.currency0, bidder, amount0Owned);
+            }
         }
     }
 
-    function getBids(PoolId poolId) external view returns (Bid[] memory) {
+    function getBids(PoolId poolId) public view returns (Bid[] memory) {
         return bids[poolId];
     }
 
@@ -379,8 +481,9 @@ contract JITRebalancerHook is BaseHook {
         uint160 sqrtPriceNextX96,
         int24 tickSpacing
     ) internal pure returns (int24 tickLower, int24 tickUpper) {
-        tickLower = _closestUsableTick(sqrtPriceNextX96, tickSpacing, false);
-        tickUpper = _closestUsableTick(sqrtPriceNextX96, tickSpacing, true);
+        int24 tick = sqrtPriceNextX96.getTickAtSqrtPrice();
+        tickLower = _closestUsableTick(tick, tickSpacing, false);
+        tickUpper = _closestUsableTick(tick, tickSpacing, true);
     }
 
     function _selectWinningBid(
@@ -388,24 +491,37 @@ contract JITRebalancerHook is BaseHook {
     ) internal returns (Bid memory _winningBid) {
         Bid[] storage poolBids = bids[poolId];
         uint128 poolLiquidity = poolManager.getLiquidity(poolId);
-        uint256 minLiquidityForLargeSwap = (uint256(poolLiquidity) *
-            THRESHOLD) / 10000;
+        uint256 minLiquidity = (uint256(poolLiquidity) * THRESHOLD) / 10000;
 
-        // @dev: cache the following parameters
-        uint256 winningBidIndex = 0;
-        int256 maxBidLiquidity = 0;
+        uint256 winningIndex = type(uint256).max; // Sentinel value
+        int256 maxLiquidity;
 
-        for (uint256 i = 0; i < poolBids.length; i++) {
-            if (poolBids[i].liquidityDelta >= maxBidLiquidity) {
-                winningBidIndex = i;
-                maxBidLiquidity = poolBids[i].liquidityDelta;
+        for (uint256 i; i < poolBids.length; ) {
+            Bid storage bid = poolBids[i];
+            if (
+                bid.liquidityDelta >= maxLiquidity &&
+                bid.liquidityDelta >= int256(minLiquidity)
+            ) {
+                maxLiquidity = bid.liquidityDelta;
+                winningIndex = i;
+            }
+            unchecked {
+                ++i;
             }
         }
 
-        if (maxBidLiquidity >= int256(minLiquidityForLargeSwap)) {
-            _winningBid = poolBids[winningBidIndex];
-            poolBids[winningBidIndex] = poolBids[poolBids.length - 1];
+        if (winningIndex != type(uint256).max) {
+            _winningBid = poolBids[winningIndex];
+            poolBids[winningIndex] = poolBids[poolBids.length - 1];
             poolBids.pop();
+
+            // Add validation (critical!)
+            require(
+                _winningBid.tickLower < _winningBid.tickUpper,
+                "Invalid bid ticks"
+            );
+        } else {
+            revert("No qualifying bids");
         }
     }
 
@@ -414,31 +530,43 @@ contract JITRebalancerHook is BaseHook {
         address recipient,
         PoolKey memory key
     ) internal {
-        delta.amount0() < 0
-            ? key.currency0.settle(
-                poolManager,
-                recipient,
-                uint256(uint128(-delta.amount0())),
-                false
-            )
-            : poolManager.take(
-                key.currency0,
-                recipient,
-                uint128(delta.amount0())
+        if (delta.amount0() < 0) {
+            uint256 amount0Owed = uint256(uint128(-delta.amount0()));
+            key.currency0.settle(poolManager, recipient, amount0Owed, false);
+        } else if (delta.amount0() > 0) {
+            uint256 amount0Owned = uint256(uint128(delta.amount0()));
+            uint256 balance = IERC20(Currency.unwrap(key.currency0)).balanceOf(
+                address(poolManager)
             );
+            // console.log("Balance Amount0 Owned:", amount0Owned);
+            // console.log("Balance for Final Liquidity Removal:", balance);
+            if (balance >= amount0Owned) {
+                poolManager.take(key.currency0, recipient, amount0Owned);
+            }
 
-        delta.amount1() < 0
-            ? key.currency1.settle(
-                poolManager,
-                recipient,
-                uint256(uint128(-delta.amount1())),
-                false
-            )
-            : poolManager.take(
-                key.currency1,
-                recipient,
-                uint128(delta.amount1())
+            if (balance < amount0Owned) {
+                poolManager.take(key.currency0, recipient, balance);
+            }
+        }
+
+        if (delta.amount1() < 0) {
+            uint256 amount1Owed = uint256(uint128(-delta.amount1()));
+            key.currency1.settle(poolManager, recipient, amount1Owed, false);
+        } else if (delta.amount1() > 0) {
+            uint256 amount1Owned = uint256(uint128(delta.amount1()));
+            uint256 balance = IERC20(Currency.unwrap(key.currency1)).balanceOf(
+                address(poolManager)
             );
+            // console.log("Balance Amount1 Owned:", amount1Owned);
+
+            if (balance >= amount1Owned) {
+                poolManager.take(key.currency1, recipient, amount1Owned);
+            }
+
+            if (balance < amount1Owned) {
+                poolManager.take(key.currency0, recipient, balance);
+            }
+        }
     }
 
     function _arePoolKeysEqual(
@@ -472,13 +600,11 @@ contract JITRebalancerHook is BaseHook {
     }
 
     function _closestUsableTick(
-        uint160 sqrtPriceNextX96,
+        int24 tick,
         int24 tickSpacing,
         bool findAbove
     ) internal pure returns (int24) {
         require(tickSpacing > 0, "Tick spacing must be positive");
-
-        int24 tick = sqrtPriceNextX96.getTickAtSqrtPrice();
 
         if (findAbove) {
             int24 nextTick = ((tick + tickSpacing - 1) / tickSpacing) *
