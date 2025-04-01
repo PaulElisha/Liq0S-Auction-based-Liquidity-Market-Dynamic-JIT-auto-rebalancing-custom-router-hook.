@@ -43,6 +43,15 @@ The `TrySwap` library interacts directly with Uniswap V4 contract so it's perfec
 - Simulates swap to get the accurate next price by interacting with the pool in simulation and adjust liqudity accordingly.
 - Removes liqudity after swap to the bidder to avoid impermanent loss.
 
+# Test Cases
+
+
+Ran 3 tests for test/JITRebalancerHookTest.t.sol:JITRebalancerHookTest
+[PASS] testAddLiquidity() (gas: 578392)
+[PASS] testBeforeSwap() (gas: 1211477)
+[PASS] testSwap() (gas: 1211090)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.58ms (3.09ms CPU time)
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**

@@ -105,7 +105,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint256 minLiquidity = (uint256(poolLiquidityBefore) *
             jitRebalancerHook.THRESHOLD()) / 10000;
 
-        int256 liquidityDelta = int256(minLiquidity + 100 ether);
+        int256 liquidityDelta = int256(minLiquidity + 200 ether);
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager
             .ModifyLiquidityParams({
@@ -124,15 +124,9 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -0.05 ether, // Large swap
+            amountSpecified: -20 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
-
-        vm.mockCall(
-            address(manager),
-            abi.encodeWithSelector(IPoolManager.swap.selector),
-            abi.encode(0)
-        );
 
         swapRouter.swap(
             key,
@@ -152,7 +146,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint256 minLiquidity = (uint256(poolLiquidityBefore) *
             jitRebalancerHook.THRESHOLD()) / 10000;
 
-        int256 liquidityDelta = int256(minLiquidity + 0.2 ether);
+        int256 liquidityDelta = int256(minLiquidity + 200 ether);
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager
             .ModifyLiquidityParams({
