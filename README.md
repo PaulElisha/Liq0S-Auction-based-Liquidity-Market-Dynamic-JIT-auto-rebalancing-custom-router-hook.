@@ -8,7 +8,7 @@
 ## **Overview**  
 The **Dynamic Auction-Based JIT Rebalancer Hook** is a Uniswap v4 hook designed to optimize large swaps by allowing liquidity providers (LPs) to bid on liquidity provision rights in real time. This ensures minimal slippage, reduced MEV extraction, and improved capital efficiency—all while maintaining atomic transaction execution.  
 
-Built as an improvement over traditional JIT liquidity models, this hook eliminates fragmentation, supports complex multi-hop swaps, and dynamically rebalances liquidity post-swap to avoid impermanent loss.  
+Built as an improvement over traditional JIT liquidity models, this hook eliminates fragmentation, supports complex multi-hop swaps, and dynamically rebalances liquidity. It receives swap's BalanceDelta post-swap to avoid impermanent loss.  
 
 ---
 
@@ -94,8 +94,8 @@ The `TrySwap` library interacts directly with Uniswap V4 contract so it's perfec
 
 ### **3. Atomic Execution**  
 - **Pre-Swap**: Removes the winning LP’s liquidity to reduce slippage.  
-- **Swap**: Executes the trade using Uniswap v4’s core logic.  
-- **Post-Swap**: Re-adds liquidity around the new price (`_getUsableTicks`).  
+- **Swap**: Executes the trade at optimal tick range using (`_getUsableTicks`) and Uniswap v4’s core logic.  
+- **Post-Swap**: Returns swap's BalanceDelta liquidity around the new price .  
 
 ### **4. Settlement**  
 - Winning LPs earn swap fees.  
