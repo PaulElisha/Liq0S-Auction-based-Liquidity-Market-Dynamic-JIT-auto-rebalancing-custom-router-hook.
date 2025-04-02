@@ -118,12 +118,6 @@ contract JITRebalancerHook is BaseHook {
         amounts[_data.sender].amount0Delta = amount0Delta;
         amounts[_data.sender].amount1Delta = amount1Delta;
 
-        console.log(
-            "amount0Delta: %d, amount1Delta: %d",
-            amount0Delta,
-            amount1Delta
-        );
-
         _transferAndSettle(_data.key.currency0, _data.sender, amount0Delta);
         _transferAndSettle(_data.key.currency1, _data.sender, amount1Delta);
 
@@ -316,9 +310,6 @@ contract JITRebalancerHook is BaseHook {
         emit BidderSelected(highestBidder.bidderAddress);
 
         // @dev: update the highestBidder amounts removed
-        console.log("............................................");
-        console.log("Removed initial liquidity for highest bidder");
-        console.log("............................................");
 
         BalanceDelta highestBidderDelta = _removeLiquidity(key, highestBidder);
 
@@ -353,12 +344,6 @@ contract JITRebalancerHook is BaseHook {
                 )
             );
         }
-
-        console.log("..............................................");
-        console.log("Added optimal liquidity for the Highest Bidder");
-        console.log("..............................................");
-
-        console.log("Optimal liquidity:", highestBidder.liquidityDelta);
 
         // @dev: update next tick ranges
         highestBidder.tickLower = tickLower;
@@ -423,10 +408,6 @@ contract JITRebalancerHook is BaseHook {
         BalanceDelta delta,
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
-        console.log("..............................................");
-        console.log("Swapping......................................");
-        console.log("..............................................");
-
         Bid memory _highestBidder = highestBidder;
         _transferTokensToBidder(
             key,
@@ -458,8 +439,7 @@ contract JITRebalancerHook is BaseHook {
             uint256 balance = IERC20(Currency.unwrap(key.currency0)).balanceOf(
                 address(poolManager)
             );
-            // console.log("Balance Amount0 Owned:", amount0Owned);
-            // console.log("Balance for Final Liquidity Removal:", balance);
+
             if (balance >= amount0Owned) {
                 poolManager.take(key.currency0, bidder, amount0Owned);
             }
@@ -530,8 +510,7 @@ contract JITRebalancerHook is BaseHook {
             uint256 balance = IERC20(Currency.unwrap(key.currency0)).balanceOf(
                 address(poolManager)
             );
-            // console.log("Balance Amount0 Owned:", amount0Owned);
-            // console.log("Balance for Final Liquidity Removal:", balance);
+
             if (balance >= amount0Owned) {
                 poolManager.take(key.currency0, recipient, amount0Owned);
             }
@@ -549,7 +528,6 @@ contract JITRebalancerHook is BaseHook {
             uint256 balance = IERC20(Currency.unwrap(key.currency1)).balanceOf(
                 address(poolManager)
             );
-            // console.log("Balance Amount1 Owned:", amount1Owned);
 
             if (balance >= amount1Owned) {
                 poolManager.take(key.currency1, recipient, amount1Owned);

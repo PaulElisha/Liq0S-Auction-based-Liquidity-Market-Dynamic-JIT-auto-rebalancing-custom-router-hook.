@@ -37,7 +37,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         token0.mint(address(this), 200 ether);
 
         token1 = new MockERC20();
-        token1.mint(address(this), 100 ether);
+        token1.mint(address(this), 200 ether);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
 
@@ -182,7 +182,7 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: 20 ether, // Large swap
+            amountSpecified: -20 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
