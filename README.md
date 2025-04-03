@@ -1,4 +1,4 @@
-# **Dynamic Auction-Based JIT Rebalancer Hook**  
+# **LiqOS: Dynamic Auction-Based JIT Rebalancer Hook**  
 
 **License**: MIT  
 **Version**: v1.0  
@@ -6,30 +6,25 @@
 ---
 
 ## **Overview**  
-The **Dynamic Auction-Based JIT Rebalancer Hook** is a Uniswap v4 hook designed to optimize large swaps by allowing liquidity providers (LPs) to bid on liquidity provision rights in real time. This ensures minimal slippage, reduced MEV extraction, and improved capital efficiency—all while maintaining atomic transaction execution.  
+“LiqOS: The liquidity layer of DeFi that rebuilds itself around every trade.”
 
-Built as an improvement over traditional JIT liquidity models, this hook eliminates fragmentation, supports complex multi-hop swaps, and dynamically rebalances liquidity. It receives swap's BalanceDelta post-swap to avoid impermanent loss.  
+**LiqOS** reimagines liquidity provision as an adaptive, self-healing system. By turning LP bid positions into real-time bidding instruments through its JIT auction system, it creates the first end-to-end operating system for on-chain market making—where every trade dynamically optimizes its own execution environment.
+
+LPs compete in real-time auctions market to provide liquidity for large swaps—turning passive positions into active bidding strategies. 
 
 ---
 
-
 ## **Motivation**
 
-I participated in the UH1-C2 hookathon with my team where we built a JIT Rebalancer hook [JIT Rebalancer Hook](https://github.com/PaulElisha/JIT-UNISWAP-V4-HOOK) but I noticed it comes with some flaws which includes:
+1. Institutional avoidance is a result of a lack of institutional grade liquidity not very available on-chain with tighter spreads and many rely on CEXES for large swaps.
 
-1. The need to manage the deployments of multiple liquidity manager contract doesn't make it sustainable. 
+2. Capital inefficiency as idle liquidity sits in unprofitable ranges requiring active repositioning earning minimal fees and suffering from impermanent loss.
 
-It kind of creates a seperate pool for LPs that want to provide liquidity for large swaps thus fragmenting liquidity.
+3. Worse pricing is a result of excessive slippage on large swaps affecting traders.
 
-2. It computes the next price of a swap without factoring if the swap is a complex swap like a multi-hop large swap.
+4. Actively reallocation of liquidity because they are not self-optimizing.
 
-It only works for a simple swap.
-
-3. It assumes the LP wants to provide a single-sided liquidity by computing only the amount of a token to add.
-
-It computes liquidityDelta based on the amount of a token in the pool.
-
-4. It gives infinite approval of both tokens in the liquidity manager pool which is risky approach.
+5. Suboptimal Fee Capture: LPs earn just 12% average ROI despite taking on impermanent loss risk, while CEX market makers achieve 30-50% returns on similar capital.
 
 ---
 
@@ -47,38 +42,44 @@ It computes liquidityDelta based on the amount of a token in the pool.
 
 ---
 
-## Mechanism
+## **Uniqueness**
 
-1. This contract manages pools by their `key` and `Id`. 
+1. **Liquidity Market** - It acts as a market place for liquidity.
 
-It stores Pool parameters after liquidity provision and checks if the `Id` provided for swap is in the mapping to ensure it utilizes the liquidity bidded.
+- On-demand auction: Imagine Uber but for DeFi Liquidity.
+- Slash slippage for whale trades like CEX: Large trades on Uniswap today suffer more slippage than coinbase. Our Hook is dynamically concentrates liquidity around large swaps thereby cutting slippage.
+- We fix Uniswap V3’s biggest flaw: Uniswap V3 requires LP to manually and actively chase price movements. Our hook auto-rebalances liquidity mid-trade making V3 positions self-optimizing. Imagine Liquidity on auto-pilot.
+- We turn MEV into LP yield: Instead of frontrunning extracting valu, our auction lets LP profit from large swaps redirecting MEV to users who deserve it.
+- We are showcasing Hooks can redefine how markets work.
 
-This removes the management of multiple liquidity manager contracts and leverages the singleton approach.
+2. **Liquidity OS** - A decentralized operating system for dynamic, self-optimizing liquidity markets where capital flows in real-time to where it’s most needed.
 
-2. It uses `TrySwap` in the libraries to simulate swap regardless of the complexity even if it's a cross-tick swap. And hooks in a `swapStepHook` function to ensure that re-allocation of liqudity is done in a single transaction. 
+- Zero latency JIT liquidity rebalancing.
+- Dynamic tick-spacing. It densifies liquidity around volatile zones.
+- We are not just building a hook, we are beta testing Uniswap’s future. V5 won’t need LPs for large swaps, it will be a liquidity bidding war.
+- Anti-fragile liquidity: Our hook auto-concentrates liquidity near price where markets panic.
+- Proxy for institutional adoption. Not your regular DeFi for deigns but an infrastructure.
 
-The `TrySwap` library interacts directly with Uniswap V4 contract so it's perfect to get the next price and factors in other parameters considered in the Uniswap V4.
+3. **Liquidity market-on-demand.**
 
-3. It removes liquidity and adds liquidity in both tokens and ensures proper re-allocation of liqudity in an optimal price range.
+- CEX like spreads for large swaps on-chain: Our hook dynamically tightens spreads around large swaps, giving traders institutional-grade pricing without relying on order books.
+- Earn more doing less: Imagine Uber surge pricing for liquidity providers. They compete for high-fees opportunities.
+- Sticky liquidity, less fragmentation: Tighter spreads attracts more volume —> more fees —> more LPs —> deeper liquidity.
+
+## Impact
+
+A. **For LPs**: Capital works smarter, not harder (deploy only when profitable).
+
+B. **For Traders**: No more frontrun-filled, high-slippage swaps.
+
+C. **For DeFi**: The missing infrastructure for truly efficient markets
 
 ---
 
 ## **Features**  
 
-✅ **Auction-Based Liquidity**  
-- LPs bid to pre-commit liquidity for large swaps, ensuring optimal pricing.  
-
-✅ **Multi-Pool & Multi-Hop Swap Support**  
-- Uses `TrySwap` library to simulate complex swaps (cross-tick, multi-pool) for accurate price adjustments.  
-
-✅ **Atomic Liquidity Rebalancing**  
-- Removes and re-adds liquidity in a single transaction, minimizing MEV and slippage.  
-
-✅ **Singleton Pool Management**  
-- No need for multiple liquidity manager contracts—pools are tracked by `PoolKey` and `PoolId`.  
-
-✅ **Secure & Gas-Efficient**  
-- No infinite token approvals; leverages Uniswap v4’s native security features.  
+• Real-time liquidity rebalancing during large simple/complex swaps
+• Auction-driven JIT provisioning 
 
 ---
 
