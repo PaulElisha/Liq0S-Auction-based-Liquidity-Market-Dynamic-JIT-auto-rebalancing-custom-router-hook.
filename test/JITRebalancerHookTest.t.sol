@@ -180,9 +180,18 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint256 token0BalanceBefore = token0.balanceOf(address(this));
         uint256 token1BalanceBefore = token1.balanceOf(address(this));
 
+        console.log(
+            "Token0 balance Before Swap: %d",
+            token0.balanceOf(address(this))
+        );
+        console.log(
+            "Token1 balance Before Swap: %d",
+            token1.balanceOf(address(this))
+        );
+
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -20 ether, // Large swap
+            amountSpecified: 20 ether, // Large swap
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
@@ -199,6 +208,14 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint256 token0BalanceAfter = token0.balanceOf(address(this));
         uint256 token1BalanceAfter = token1.balanceOf(address(this));
 
+        console.log(
+            "Token0 balance After Swap: %d",
+            token0.balanceOf(address(this))
+        );
+        console.log(
+            "Token1 balance After Swap: %d",
+            token1.balanceOf(address(this))
+        );
         assertLt(token0BalanceAfter, token0BalanceBefore);
         assertGt(token1BalanceAfter, token1BalanceBefore);
 

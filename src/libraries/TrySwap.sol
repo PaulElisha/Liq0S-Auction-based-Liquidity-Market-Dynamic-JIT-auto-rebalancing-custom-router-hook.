@@ -27,6 +27,18 @@ library TrySwap {
     using StateLibrary for IPoolManager;
     using PoolExtended for IPoolManager;
 
+    struct SwapStepState {
+        uint24 swapFee;
+        int256 amountSpecifiedRemaining;
+        int256 amountCalculated;
+        bool exactInput;
+        uint256 protocolFee;
+        uint160 sqrtPriceX96;
+        int24 tick;
+        uint128 liquidityStart;
+        uint24 lpFee;
+    }
+
     function swap(
         IPoolManager poolManager,
         PoolId poolId,
@@ -37,49 +49,56 @@ library TrySwap {
             Pool.SwapResult memory
         ) swapStepHook
     ) internal returns (BalanceDelta result) {
-        uint24 swapFee;
-        int256 amountSpecifiedRemaining;
-        int256 amountCalculated;
+        SwapStepState memory swapStepState;
+
+        // uint24 swapFee;
+        // int256 amountSpecifiedRemaining;
+        // int256 amountCalculated;
         Pool.SwapResult memory state;
         bool zeroForOne = params.zeroForOne;
-        bool exactInput = params.amountSpecified < 0;
-        uint256 protocolFee;
+        swapStepState.exactInput = params.amountSpecified < 0;
+        // uint256 protocolFee;
         {
+            uint24 protocolfee;
+            uint24 lpfee;
             (
-                uint160 _sqrtPriceX96,
-                int24 _tick,
-                uint24 _protocolFee,
-                uint24 _lpFee,
-                uint128 _liquidityStart
+                swapStepState.sqrtPriceX96,
+                swapStepState.tick,
+                protocolfee,
+                lpfee,
+                swapStepState.liquidityStart
             ) = poolManager.getPoolState(poolId);
 
-            protocolFee = zeroForOne
-                ? _protocolFee.getZeroForOneFee()
-                : _protocolFee.getOneForZeroFee();
+            swapStepState.protocolFee = zeroForOne
+                ? protocolfee.getZeroForOneFee()
+                : protocolfee.getOneForZeroFee();
 
-            amountSpecifiedRemaining = params.amountSpecified;
-            amountCalculated = 0;
+            swapStepState.amountSpecifiedRemaining = params.amountSpecified;
+            swapStepState.amountCalculated = 0;
 
             state = Pool.SwapResult({
-                sqrtPriceX96: _sqrtPriceX96,
-                tick: _tick,
-                liquidity: _liquidityStart
+                sqrtPriceX96: swapStepState.sqrtPriceX96,
+                tick: swapStepState.tick,
+                liquidity: swapStepState.liquidityStart
             });
 
             {
-                uint24 lpFee = params.lpFeeOverride.isOverride()
+                swapStepState.lpFee = params.lpFeeOverride.isOverride()
                     ? params.lpFeeOverride.removeOverrideFlagAndValidate()
-                    : _lpFee;
+                    : lpfee;
 
-                swapFee = protocolFee == 0
-                    ? lpFee
+                swapStepState.swapFee = swapStepState.protocolFee == 0
+                    ? lpfee
                     : ProtocolFeeLibrary.calculateSwapFee(
-                        uint16(_protocolFee),
-                        lpFee
+                        uint16(protocolfee),
+                        swapStepState.lpFee
                     );
             }
 
-            if (!exactInput && (swapFee == LPFeeLibrary.MAX_LP_FEE)) {
+            if (
+                !swapStepState.exactInput &&
+                (swapStepState.swapFee == LPFeeLibrary.MAX_LP_FEE)
+            ) {
                 Pool.InvalidFeeForExactOut.selector.revertWith();
             }
 
@@ -87,9 +106,9 @@ library TrySwap {
                 return BalanceDeltaLibrary.ZERO_DELTA;
 
             if (zeroForOne) {
-                if (params.sqrtPriceLimitX96 >= _sqrtPriceX96) {
+                if (params.sqrtPriceLimitX96 >= swapStepState.sqrtPriceX96) {
                     Pool.PriceLimitAlreadyExceeded.selector.revertWith(
-                        _sqrtPriceX96,
+                        swapStepState.sqrtPriceX96,
                         params.sqrtPriceLimitX96
                     );
                 }
@@ -99,9 +118,9 @@ library TrySwap {
                     );
                 }
             } else {
-                if (params.sqrtPriceLimitX96 <= _sqrtPriceX96) {
+                if (params.sqrtPriceLimitX96 <= swapStepState.sqrtPriceX96) {
                     Pool.PriceLimitAlreadyExceeded.selector.revertWith(
-                        _sqrtPriceX96,
+                        swapStepState.sqrtPriceX96,
                         params.sqrtPriceLimitX96
                     );
                 }
@@ -115,7 +134,7 @@ library TrySwap {
         Pool.StepComputations memory step;
 
         while (
-            !(amountSpecifiedRemaining == 0 ||
+            !(swapStepState.amountSpecifiedRemaining == 0 ||
                 state.sqrtPriceX96 == params.sqrtPriceLimitX96)
         ) {
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
@@ -151,29 +170,34 @@ library TrySwap {
                     params.sqrtPriceLimitX96
                 ),
                 state.liquidity,
-                amountSpecifiedRemaining,
-                swapFee
+                swapStepState.amountSpecifiedRemaining,
+                swapStepState.swapFee
             );
 
-            if (!exactInput) {
+            if (!swapStepState.exactInput) {
                 unchecked {
-                    amountSpecifiedRemaining -= step.amountOut.toInt256();
+                    swapStepState.amountSpecifiedRemaining -= step
+                        .amountOut
+                        .toInt256();
                 }
-                amountCalculated =
-                    amountCalculated -
+                swapStepState.amountCalculated =
+                    swapStepState.amountCalculated -
                     (step.amountIn + step.feeAmount).toInt256();
             } else {
                 unchecked {
-                    amountSpecifiedRemaining += (step.amountIn + step.feeAmount)
-                        .toInt256();
+                    swapStepState.amountSpecifiedRemaining += (step.amountIn +
+                        step.feeAmount).toInt256();
                 }
-                amountCalculated = amountCalculated + step.amountOut.toInt256();
+                swapStepState.amountCalculated =
+                    swapStepState.amountCalculated +
+                    step.amountOut.toInt256();
             }
 
-            if (protocolFee > 0) {
+            if (swapStepState.protocolFee > 0) {
                 unchecked {
                     uint256 delta = ((step.amountIn + step.feeAmount) *
-                        protocolFee) / ProtocolFeeLibrary.PIPS_DENOMINATOR;
+                        swapStepState.protocolFee) /
+                        ProtocolFeeLibrary.PIPS_DENOMINATOR;
                     step.feeAmount -= delta;
                 }
             }
@@ -209,17 +233,17 @@ library TrySwap {
         }
 
         unchecked {
-            if (zeroForOne != exactInput) {
+            if (zeroForOne != swapStepState.exactInput) {
                 result = toBalanceDelta(
-                    amountCalculated.toInt128(),
-                    (params.amountSpecified - amountSpecifiedRemaining)
-                        .toInt128()
+                    swapStepState.amountCalculated.toInt128(),
+                    (params.amountSpecified -
+                        swapStepState.amountSpecifiedRemaining).toInt128()
                 );
             } else {
                 result = toBalanceDelta(
-                    (params.amountSpecified - amountSpecifiedRemaining)
-                        .toInt128(),
-                    amountCalculated.toInt128()
+                    (params.amountSpecified -
+                        swapStepState.amountSpecifiedRemaining).toInt128(),
+                    swapStepState.amountCalculated.toInt128()
                 );
             }
         }
