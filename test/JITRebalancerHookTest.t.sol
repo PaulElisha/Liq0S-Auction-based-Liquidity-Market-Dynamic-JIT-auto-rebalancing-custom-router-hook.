@@ -44,7 +44,7 @@ contract JITRebalancerHookTest is Test, Deployers {
         address hookAddress = address(flags);
 
         deployCodeTo("JITRebalancerHook.sol", abi.encode(manager), hookAddress);
-        jitRebalancerHook = JITRebalancerHook(hookAddress);
+        jitRebalancerHook = JITRebalancerHook((hookAddress));
 
         (key, ) = initPool(
             Currency.wrap(address(token0)),

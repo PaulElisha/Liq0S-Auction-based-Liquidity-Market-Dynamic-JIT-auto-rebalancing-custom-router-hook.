@@ -16,14 +16,17 @@ import "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import "v4-periphery/src/utils/BaseHook.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@uniswap/v4-core/src/libraries/SafeCast.sol";
+
 import "./libraries/TrySwap.sol";
 import "./libraries/TickExtended.sol";
 import "./libraries/PoolExtended.sol";
-import "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import "./libraries/CallbackDataValidation.sol";
+import "./base/Payments.sol";
 
 import {Test, console2, console, stdError} from "forge-std/Test.sol";
 
-contract JITRebalancerHook is BaseHook {
+contract JITRebalancerHook is BaseHook, Payments {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
     using SwapMath for uint160;
@@ -51,7 +54,7 @@ contract JITRebalancerHook is BaseHook {
     struct CallbackData {
         PoolKey key;
         IPoolManager.ModifyLiquidityParams params;
-        address sender;
+        address payer;
     }
 
     struct DeltaAmounts {
@@ -99,7 +102,11 @@ contract JITRebalancerHook is BaseHook {
     function unlockCallback(
         bytes calldata data
     ) external returns (bytes memory) {
+        CallbackDataValidation.verifyCallbackData(address(poolManager));
+
         CallbackData memory _data = abi.decode(data, (CallbackData));
+
+        require(msg.sender == address(poolManager), "Not poolManager");
 
         (BalanceDelta delta, ) = poolManager.modifyLiquidity(
             _data.key,
@@ -107,40 +114,33 @@ contract JITRebalancerHook is BaseHook {
             hex""
         );
 
-        amounts[_data.sender].amount0Delta = delta.amount0() < 0
-            ? uint256(uint128(-delta.amount0()))
-            : uint256(uint128(delta.amount0()));
+        (
+            amounts[_data.payer].amount0Delta,
+            amounts[_data.payer].amount1Delta
+        ) = _returnDelta(delta);
 
-        amounts[_data.sender].amount1Delta = delta.amount1() < 0
-            ? uint256(uint128(-delta.amount1()))
-            : uint256(uint128(delta.amount1()));
-
-        _transferAndSettle(
-            _data.key.currency0,
-            _data.sender,
-            amounts[_data.sender].amount0Delta
+        console.log(
+            "Bidder %s, amount0Delta: %d, amount1Delta: %d",
+            _data.payer,
+            amounts[_data.payer].amount0Delta,
+            amounts[_data.payer].amount1Delta
         );
 
-        _transferAndSettle(
+        pay(
+            poolManager,
+            _data.key.currency0,
+            _data.payer,
+            amounts[_data.payer].amount0Delta
+        );
+
+        pay(
+            poolManager,
             _data.key.currency1,
-            _data.sender,
-            amounts[_data.sender].amount1Delta
+            _data.payer,
+            amounts[_data.payer].amount1Delta
         );
 
         return hex"";
-    }
-
-    function _transferAndSettle(
-        Currency currency,
-        address sender,
-        uint256 amount
-    ) internal {
-        IERC20(Currency.unwrap(currency)).safeTransferFrom(
-            sender,
-            address(this),
-            amount
-        );
-        currency.settle(poolManager, address(this), amount, false);
     }
 
     function addLiquidity(
@@ -158,7 +158,7 @@ contract JITRebalancerHook is BaseHook {
 
         poolManager.unlock(
             abi.encode(
-                CallbackData({key: key, params: params, sender: msg.sender})
+                CallbackData({key: key, params: params, payer: msg.sender})
             )
         );
 
@@ -328,15 +328,9 @@ contract JITRebalancerHook is BaseHook {
 
         BalanceDelta highestBidderDelta = _removeLiquidity(key, highestBidder);
 
-        {
-            highestBidder.deltaAmount0 = highestBidderDelta.amount0() < 0
-                ? uint256(uint128(-highestBidderDelta.amount0()))
-                : uint256(uint128(highestBidderDelta.amount0()));
-
-            highestBidder.deltaAmount1 = highestBidderDelta.amount1() < 0
-                ? uint256(uint128(-highestBidderDelta.amount1()))
-                : uint256(uint128(highestBidderDelta.amount1()));
-        }
+        (highestBidder.deltaAmount0, highestBidder.deltaAmount1) = _returnDelta(
+            highestBidderDelta
+        );
 
         console.log(
             "Removed amount0Delta: %d and amount1Delta: %d",
@@ -615,6 +609,17 @@ contract JITRebalancerHook is BaseHook {
                 revert("No usable tick below");
             return previousTick;
         }
+    }
+
+    function _returnDelta(
+        BalanceDelta _delta
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        amount0 = _delta.amount0() < 0
+            ? uint256(uint128(-_delta.amount0()))
+            : uint256(uint128(_delta.amount0()));
+        amount1 = _delta.amount1() < 0
+            ? uint256(uint128(-_delta.amount1()))
+            : uint256(uint128(_delta.amount1()));
     }
 
     function getHookPermissions()
