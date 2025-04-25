@@ -38,35 +38,6 @@ contract JITRebalancerHook is BaseHook, Payments {
     using TrySwap for IPoolManager;
     using SafeERC20 for IERC20;
 
-    uint256 public constant THRESHOLD = 100; // 1% threshold in Basis Points Scale
-
-    struct Bid {
-        address bidderAddress;
-        PoolId poolId;
-        int24 tickLower;
-        int24 tickUpper;
-        uint256 deltaAmount0;
-        uint256 deltaAmount1;
-        int256 liquidityDelta;
-    }
-    Bid highestBidder;
-
-    struct CallbackData {
-        PoolKey key;
-        IPoolManager.ModifyLiquidityParams params;
-        address payer;
-    }
-
-    struct DeltaAmounts {
-        uint256 amount0Delta;
-        uint256 amount1Delta;
-    }
-
-    mapping(address sender => DeltaAmounts) amounts;
-    mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
-    mapping(PoolId poolId => PoolKey key) public pools;
-    mapping(PoolId poolId => Bid[]) public bids;
-
     event BidRegistered(
         address bidder,
         PoolId poolId,
@@ -97,6 +68,35 @@ contract JITRebalancerHook is BaseHook, Payments {
 
     event BidderSelected(address bidder);
 
+    uint256 public constant THRESHOLD = 100; // 1% threshold in Basis Points Scale
+
+    struct Bid {
+        address bidderAddress;
+        PoolId poolId;
+        int24 tickLower;
+        int24 tickUpper;
+        uint256 deltaAmount0;
+        uint256 deltaAmount1;
+        int256 liquidityDelta;
+    }
+    Bid highestBidder;
+
+    struct CallbackData {
+        PoolKey key;
+        IPoolManager.ModifyLiquidityParams params;
+        address payer;
+    }
+
+    struct DeltaAmounts {
+        uint256 amount0Delta;
+        uint256 amount1Delta;
+    }
+
+    mapping(address sender => DeltaAmounts) amounts;
+    mapping(PoolId poolId => PoolExtended.Info info) public poolInfo;
+    mapping(PoolId poolId => PoolKey key) public pools;
+    mapping(PoolId poolId => Bid[]) public bids;
+
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function unlockCallback(
@@ -105,8 +105,6 @@ contract JITRebalancerHook is BaseHook, Payments {
         CallbackDataValidation.verifyCallbackData(address(poolManager));
 
         CallbackData memory _data = abi.decode(data, (CallbackData));
-
-        require(msg.sender == address(poolManager), "Not poolManager");
 
         (BalanceDelta delta, ) = poolManager.modifyLiquidity(
             _data.key,
@@ -126,19 +124,21 @@ contract JITRebalancerHook is BaseHook, Payments {
             amounts[_data.payer].amount1Delta
         );
 
-        pay(
-            poolManager,
-            _data.key.currency0,
-            _data.payer,
-            amounts[_data.payer].amount0Delta
-        );
+        if (amounts[_data.payer].amount0Delta > 0)
+            pay(
+                poolManager,
+                _data.key.currency0,
+                _data.payer,
+                amounts[_data.payer].amount0Delta
+            );
 
-        pay(
-            poolManager,
-            _data.key.currency1,
-            _data.payer,
-            amounts[_data.payer].amount1Delta
-        );
+        if (amounts[_data.payer].amount1Delta > 0)
+            pay(
+                poolManager,
+                _data.key.currency1,
+                _data.payer,
+                amounts[_data.payer].amount1Delta
+            );
 
         return hex"";
     }
