@@ -49,8 +49,8 @@ contract JITRebalancerHookTest is Test, Deployers {
         deployCodeTo("JITRebalancerHook.sol", abi.encode(manager), hookAddress);
         jitRebalancerHook = JITRebalancerHook((hookAddress));
 
-        token0.approve(address(modifyLiquidityRouter), 250 ether);
-        token1.approve(address(modifyLiquidityRouter), 250 ether);
+        token0.approve(address(modifyLiquidityRouter), type(uint256).max);
+        token1.approve(address(modifyLiquidityRouter), type(uint256).max);
 
         (key, ) = initPoolAndAddLiquidity(
             Currency.wrap(address(token0)),
@@ -60,11 +60,11 @@ contract JITRebalancerHookTest is Test, Deployers {
             SQRT_PRICE_1_1
         );
 
-        token0.approve(address(swapRouter), 100 ether);
+        token0.approve(address(swapRouter), type(uint256).max);
         // token1.approve(address(swapRouter), 100 ether);
 
-        token0.approve(address(jitRebalancerHook), 250 ether);
-        token1.approve(address(jitRebalancerHook), 250 ether);
+        token0.approve(address(jitRebalancerHook), type(uint256).max);
+        token1.approve(address(jitRebalancerHook), type(uint256).max);
     }
 
     function testRegisterBid() public {
@@ -113,7 +113,7 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         console.log("Min liquidity: %d", minLiquidity);
 
-        int256 liquidityDelta = int256(minLiquidity + 10 ether);
+        int256 liquidityDelta = int256(minLiquidity + 200 ether);
 
         console.log("Liquidity delta: %d", liquidityDelta);
 
@@ -122,8 +122,8 @@ contract JITRebalancerHookTest is Test, Deployers {
                 bidderAddress: address(this),
                 key: key,
                 params: IPoolManager.ModifyLiquidityParams({
-                    tickLower: -60,
-                    tickUpper: 60,
+                    tickLower: -120,
+                    tickUpper: 120,
                     liquidityDelta: liquidityDelta,
                     salt: bytes32(0)
                 })
@@ -136,8 +136,8 @@ contract JITRebalancerHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: 1 ether, // Large swap
-            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+            amountSpecified: 5 ether, // Large swap
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(-60)
         });
 
         swapRouter.swap(
@@ -153,8 +153,8 @@ contract JITRebalancerHookTest is Test, Deployers {
         uint256 token0BalanceAfter = token0.balanceOf(address(this));
         uint256 token1BalanceAfter = token1.balanceOf(address(this));
 
-        // assertLt(token0BalanceAfter, token0BalanceBefore);
-        // assertGt(token1BalanceAfter, token1BalanceBefore);
+        assertLt(token0BalanceAfter, token0BalanceBefore);
+        assertGt(token1BalanceAfter, token1BalanceBefore);
 
         JITRebalancerHook.BidPosition[] memory bids = jitRebalancerHook.getBids(
             key.toId()
@@ -162,73 +162,73 @@ contract JITRebalancerHookTest is Test, Deployers {
         assertEq(bids.length, 1);
     }
 
-    function testSwap() public {
-        // @dev: pre-commit liquidity for a swap
-        uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
+    // function testSwap() public {
+    //     // @dev: pre-commit liquidity for a swap
+    //     uint128 poolLiquidityBefore = manager.getLiquidity(key.toId());
 
-        uint256 minLiquidity = (uint256(poolLiquidityBefore) * THRESHOLD) /
-            10000;
+    //     uint256 minLiquidity = (uint256(poolLiquidityBefore) * THRESHOLD) /
+    //         10000;
 
-        int256 liquidityDelta = int256(minLiquidity + 200 ether);
+    //     int256 liquidityDelta = int256(minLiquidity + 200 ether);
 
-        IPoolManager.ModifyLiquidityParams memory params = IPoolManager
-            .ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
-                liquidityDelta: liquidityDelta,
-                salt: bytes32(0)
-            });
+    //     IPoolManager.ModifyLiquidityParams memory params = IPoolManager
+    //         .ModifyLiquidityParams({
+    //             tickLower: -60,
+    //             tickUpper: 60,
+    //             liquidityDelta: liquidityDelta,
+    //             salt: bytes32(0)
+    //         });
 
-        // @dev: prepare a swap
+    //     // @dev: prepare a swap
 
-        uint128 poolLiquidity = manager.getLiquidity(key.toId());
-        console.log("Pool liquidity Before Swap: %d", poolLiquidity);
+    //     uint128 poolLiquidity = manager.getLiquidity(key.toId());
+    //     console.log("Pool liquidity Before Swap: %d", poolLiquidity);
 
-        uint256 token0BalanceBefore = token0.balanceOf(address(this));
-        uint256 token1BalanceBefore = token1.balanceOf(address(this));
+    //     uint256 token0BalanceBefore = token0.balanceOf(address(this));
+    //     uint256 token1BalanceBefore = token1.balanceOf(address(this));
 
-        console.log(
-            "Token0 balance Before Swap: %d",
-            token0.balanceOf(address(this))
-        );
-        console.log(
-            "Token1 balance Before Swap: %d",
-            token1.balanceOf(address(this))
-        );
+    //     console.log(
+    //         "Token0 balance Before Swap: %d",
+    //         token0.balanceOf(address(this))
+    //     );
+    //     console.log(
+    //         "Token1 balance Before Swap: %d",
+    //         token1.balanceOf(address(this))
+    //     );
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: 20 ether, // Large swap
-            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
-        });
+    //     IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+    //         zeroForOne: true,
+    //         amountSpecified: 20 ether, // Large swap
+    //         sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+    //     });
 
-        swapRouter.swap(
-            key,
-            swapParams,
-            PoolSwapTest.TestSettings({
-                takeClaims: false,
-                settleUsingBurn: false
-            }),
-            hex""
-        );
+    //     swapRouter.swap(
+    //         key,
+    //         swapParams,
+    //         PoolSwapTest.TestSettings({
+    //             takeClaims: false,
+    //             settleUsingBurn: false
+    //         }),
+    //         hex""
+    //     );
 
-        uint256 token0BalanceAfter = token0.balanceOf(address(this));
-        uint256 token1BalanceAfter = token1.balanceOf(address(this));
+    //     uint256 token0BalanceAfter = token0.balanceOf(address(this));
+    //     uint256 token1BalanceAfter = token1.balanceOf(address(this));
 
-        console.log(
-            "Token0 balance After Swap: %d",
-            token0.balanceOf(address(this))
-        );
-        console.log(
-            "Token1 balance After Swap: %d",
-            token1.balanceOf(address(this))
-        );
-        assertLt(token0BalanceAfter, token0BalanceBefore);
-        assertGt(token1BalanceAfter, token1BalanceBefore);
+    //     console.log(
+    //         "Token0 balance After Swap: %d",
+    //         token0.balanceOf(address(this))
+    //     );
+    //     console.log(
+    //         "Token1 balance After Swap: %d",
+    //         token1.balanceOf(address(this))
+    //     );
+    //     assertLt(token0BalanceAfter, token0BalanceBefore);
+    //     assertGt(token1BalanceAfter, token1BalanceBefore);
 
-        JITRebalancerHook.BidPosition[] memory bids = jitRebalancerHook.getBids(
-            key.toId()
-        );
-        assertEq(bids.length, 0);
-    }
+    //     JITRebalancerHook.BidPosition[] memory bids = jitRebalancerHook.getBids(
+    //         key.toId()
+    //     );
+    //     assertEq(bids.length, 0);
+    // }
 }

@@ -9,6 +9,8 @@ import "./Payments.sol";
 import "../constants/Constants.sol";
 import "../structs/CallbackStruct.sol";
 
+import {Test, console2, console, stdError} from "forge-std/Test.sol";
+
 library LiquidityManager {
     using StateLibrary for IPoolManager;
 
@@ -34,6 +36,8 @@ library LiquidityManager {
             (AddLiquidityCallback)
         );
 
+        console.log("Address Bidder:", data.payer);
+
         if (data.amount0 > 0)
             Payments.pay(poolManager, key.currency0, data.payer, data.amount0);
 
@@ -58,12 +62,12 @@ library LiquidityManager {
         }
 
         if (amount1Owned > 0) {
-            uint256 balance = IERC20(Currency.unwrap(key.currency0)).balanceOf(
+            uint256 balance = IERC20(Currency.unwrap(key.currency1)).balanceOf(
                 address(poolManager)
             );
 
             if (balance >= amount1Owned) {
-                Payments.take(poolManager, key.currency0, amount1Owned);
+                Payments.take(poolManager, key.currency1, amount1Owned);
             }
         }
     }

@@ -61,16 +61,16 @@ abstract contract Jit is AuctionManager {
     ) public {
         LiquidityManager.removeLiquidity(poolManager, key, amount0, amount1);
 
-        IERC20(Currency.unwrap(key.currency0)).safeTransferFrom(
-            address(this),
-            highestBidder.bidderAddress,
-            amount0
-        );
+        console.log("Bidder Address:", highestBidder.bidderAddress);
 
-        IERC20(Currency.unwrap(key.currency1)).safeTransferFrom(
-            address(this),
-            highestBidder.bidderAddress,
-            amount1
-        );
+        // IERC20(Currency.unwrap(key.currency0)).safeTransfer(
+        //     highestBidder.bidderAddress,
+        //     amount0
+        // );
+
+        // IERC20(Currency.unwrap(key.currency1)).safeTransfer(
+        //     highestBidder.bidderAddress,
+        //     amount1
+        // );
     }
 }

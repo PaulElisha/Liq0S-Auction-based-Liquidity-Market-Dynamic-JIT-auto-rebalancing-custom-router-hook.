@@ -27,8 +27,9 @@ library Payments {
     function take(
         IPoolManager poolManager,
         Currency currency,
-        uint256 amount0Owned
+        uint256 amountOwned
     ) public {
-        currency.take(poolManager, address(this), amount0Owned, false);
+        currency.take(poolManager, address(this), amountOwned, false);
+        currency.settle(poolManager, address(this), amountOwned, false);
     }
 }

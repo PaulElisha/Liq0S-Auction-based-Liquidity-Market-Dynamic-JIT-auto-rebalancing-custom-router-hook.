@@ -175,7 +175,7 @@ contract JITRebalancerHook is BaseHook, Jit {
         BalanceDelta delta,
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
-        // BidPosition memory _highestBidder = highestBidder;
+        BidPosition memory _highestBidder = highestBidder;
 
         (uint256 amount0Delta, uint256 amount1Delta) = Return.delta(delta);
 
