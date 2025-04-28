@@ -1,7 +1,7 @@
 [profile.default]
 src = "src"
 out = "out"
-libs = ["lib"]
+libs = ["@uniswap/v4-core/src=lib/v4-periphery/lib/v4-core/src"]
 
 evm_version = "cancun"
 optimizer = true
